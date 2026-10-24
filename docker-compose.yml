@@ -1,0 +1,114 @@
+version: '3.8'
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    internal: true
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: hrm-postgres
+    environment:
+      POSTGRES_USER: hrm_user
+      POSTGRES_PASSWORD: StrongPassword123!
+      POSTGRES_DB: hrm_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend-net
+    restart: always
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: hrm-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@domain.com
+      PGADMIN_DEFAULT_PASSWORD: StrongPassword123!
+    networks:
+      - frontend-net
+      - backend-net
+    restart: always
+
+  hrm-app:
+    build: ./app
+    container_name: hrm-app
+    user: "1000:1000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: hrm_db
+      DB_USER: hrm_user
+      DB_PASSWORD: StrongPassword123!
+    networks:
+      - frontend-net
+      - backend-net
+    depends_on:
+      - postgres
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    container_name: hrm-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - frontend-net
+    depends_on:
+      - hrm-app
+      - pgadmin
+    restart: always
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: hrm-cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - backend-net
+
+  prometheus:
+    image: prom/prometheus
+    container_name: hrm-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - backend-net
+
+  grafana:
+    image: grafana/grafana
+    container_name: hrm-grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - frontend-net
+      - backend-net
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: hrm-loki
+    ports:
+      - "3100:3100"
+    networks:
+      - backend-net
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: hrm-promtail
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml
+    networks:
+      - backend-net
+
+volumes:
+  pgdata:
